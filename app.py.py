@@ -1,5 +1,6 @@
 import os
 import re
+import io
 import textwrap
 import streamlit as st
 from datetime import datetime
@@ -7,14 +8,12 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from num2words import num2words
 
-# Configuração da página do aplicativo web
 st.set_page_config(
     page_title="Gerador de Alvarás - Tropa do Adv",
     page_icon="⚖️",
     layout="wide"
 )
 
-# Estilização visual com CSS personalizado (tema escuro padrão)
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
@@ -25,9 +24,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<p class="titulo">⚖️ Sistema de Alvarás - Tropa do Adv</p>', unsafe_allow_html=True)
-st.markdown('<p class="subtitulo">Cole o texto do alvará abaixo para extrair os dados e gerar o PDF automaticamente</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitulo">Cole o texto do alvará abaixo para extrair os dados e gerar o PDF perfeitamente alinhado</p>', unsafe_allow_html=True)
 
-# Define o caminho base do projeto
 PASTA_PROJETO = os.path.dirname(os.path.abspath(__file__))
 
 def obter_data_extenso():
@@ -44,34 +42,30 @@ def formatar_cpf_cnpj(valor):
         return f"{numeros[:2]}.{numeros[2:5]}.{numeros[5:8]}/{numeros[8:12]}-{numeros[12:]}"
     return "000.000.000-00" if numeros == "" else valor
 
-def gerar_pdf_bytes(dados):
-    """Gera o PDF diretamente na memória RAM e retorna os bytes para download."""
-    buffer = io_bytes = open_pdf_buffer()
-    return io_bytes
-
-def open_pdf_buffer():
-    import io
+def open_pdf_buffer(dados):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     largura, altura = A4
     
+    # Procura o template na pasta do projeto
     template_path = os.path.join(PASTA_PROJETO, 'template.png')
     if os.path.exists(template_path):
         c.drawImage(template_path, 0, 0, width=largura, height=altura)
 
+    # Número do processo no topo
     c.setFillColorRGB(0, 0, 0)
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(440, altura - 153, f"{dados_globais['processo']}")
+    c.drawString(420, altura - 153, f"{dados['processo']}")
     
     x_margem = 105
     y_base = altura - 316 
     
     campos = [
-        ("Credor: ", dados_globais['nome']),
-        ("CPF/CNPJ: ", dados_globais['cpf']),
-        ("Processo N°: ", dados_globais['processo']),
-        ("Assunto: ", dados_globais['assunto']),
-        ("Contra: ", dados_globais['contra'])
+        ("Credor: ", dados['nome']),
+        ("CPF/CNPJ: ", dados['cpf']),
+        ("Processo N°: ", dados['processo']),
+        ("Assunto: ", dados['assunto']),
+        ("Contra: ", dados['contra'])
     ]
 
     for label, valor in campos:
@@ -83,12 +77,12 @@ def open_pdf_buffer():
 
     y_valor = altura - 540
     c.setFont("Helvetica-Bold", 11)
-    label_v = f"Valor a receber: R$ {dados_globais['valor_str']} "
+    label_v = f"Valor a receber: R$ {dados['valor_str']} "
     c.drawString(x_margem, y_valor, label_v)
     
     largura_l = c.stringWidth(label_v, "Helvetica-Bold", 11)
     c.setFont("Helvetica", 11)
-    extenso_p = f"({dados_globais['extenso']})"
+    extenso_p = f"({dados['extenso']})"
     
     linhas = textwrap.wrap(extenso_p, width=55) 
     for i, linha in enumerate(linhas):
@@ -97,17 +91,13 @@ def open_pdf_buffer():
         c.drawString(pos_x, pos_y, linha)
 
     c.setFont("Helvetica-Bold", 11)
-    c.drawCentredString(largura/2, altura - 675, dados_globais['advogado'])
+    c.drawCentredString(largura/2, altura - 675, dados['advogado'])
     c.drawCentredString(largura/2, altura - 695, f"{obter_data_extenso()}.")
     
     c.save()
     buffer.seek(0)
     return buffer
 
-# Variável global temporária para uso na função do canvas do ReportLab
-dados_globais = {}
-
-# Caixa de texto na interface web para colar o alvará
 texto_raw = st.text_area(
     "📄 Cole o texto do alvará abaixo:",
     placeholder="Cole aqui o conteúdo copiado do WhatsApp ou do documento...",
@@ -121,7 +111,6 @@ if st.button("🚀 Processar e Gerar Alvará", type="primary"):
         texto_raw = texto_raw.replace("\\", "/")
 
         try:
-            # Extrações via Expressões Regulares (mesma lógica do script original)
             cpf_match = re.search(r"(?:CPF[:\s]*)?(\d{3}\.?\d{3}\.?\d{3}-?\d{2})", texto_raw, re.I)
             cpf_raw = cpf_match.group(1) if cpf_match else "000.000.000-00"
 
@@ -132,10 +121,10 @@ if st.button("🚀 Processar e Gerar Alvará", type="primary"):
             proc = proc_match.group(1) if proc_match else "Não Encontrado"
 
             assunto_match = re.search(r"(?:Assunto|•)\*?:\s*\*?([^*,\n]+)\*?", texto_raw, re.I)
-            assunto = assunto_match.group(1).strip().replace('*', '') if assunto_match else "Não Encontrado"
+            assunto = assunto_match.group(1).strip().replace('*', '') if assunto_match else "Não Identificado"
 
             contra_match = re.search(r"(?:contrária|Reqda|Reqdo|Contra)\*?:\s*\*?([^*,\n]+)\*?", texto_raw, re.I)
-            contra = contra_match.group(1).strip().replace('*', '') if contra_match else "Não Encontrado"
+            contra = contra_match.group(1).strip().replace('*', '') if contra_match else "Não Identificado"
 
             valor_match = re.search(r"liberação\s+do\s+valor\s+de\s+\*?R\$\s*([\d.,]+)\*?", texto_raw, re.I)
             if valor_match:
@@ -164,8 +153,7 @@ if st.button("🚀 Processar e Gerar Alvará", type="primary"):
             except:
                 extenso = "Zero Reais"
 
-            # Preenche os dados globais para a montagem do PDF
-            dados_globais = {
+            dados = {
                 'nome': nome, 
                 'processo': proc, 
                 'contra': contra, 
@@ -179,13 +167,12 @@ if st.button("🚀 Processar e Gerar Alvará", type="primary"):
             st.success("✅ Dados extraídos e mapeados com sucesso!")
             st.markdown("---")
 
-            # Exibe os dados extraídos de forma limpa na tela
             st.markdown("### 📋 Dados Mapeados:")
             st.markdown('<div class="bloco-dados">', unsafe_allow_html=True)
             col1, col2 = st.columns(2)
             with col1:
                 st.write(f"**Credor:** {nome}")
-                st.write(f"**CPF/CNPJ:** {dados_globais['cpf']}")
+                st.write(f"**CPF/CNPJ:** {dados['cpf']}")
                 st.write(f"**Processo:** {proc}")
                 st.write(f"**Assunto:** {assunto}")
             with col2:
@@ -194,8 +181,7 @@ if st.button("🚀 Processar e Gerar Alvará", type="primary"):
                 st.write(f"**Advogado:** {advogado}")
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Gera o PDF em memória e cria o botão de Download direto na interface
-            pdf_buffer = open_pdf_buffer()
+            pdf_buffer = open_pdf_buffer(dados)
             nome_limpo_arquivo = re.sub(r'[\\/*?:"<>|]', "", nome)
             
             st.download_button(
